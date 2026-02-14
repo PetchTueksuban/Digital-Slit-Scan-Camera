@@ -33,3 +33,6 @@ Scan: Once the timer finishes, the image is saved to the project folder as scan_
 ⚠️ Important Notes
 Focus: Auto-focus is disabled by default to prevent "hunting" during the scan. Adjust LOCKED_FOCUS_VALUE to suit your camera distance.
 Sync: For a perfect unwrap, the SCAN_DURATION must match the exact time it takes for your turntable to complete one 360° rotation.
+
+<img width="1570" height="1080" alt="scan_final_1770395678" src="https://github.com/user-attachments/assets/2de19870-ca09-4711-88cc-c7dc44e67ece" />
+
