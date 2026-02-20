@@ -11,14 +11,20 @@ It works by extracting a single-pixel line from each frame of a video and stitch
 # 🛠 Installation  
 **Clone the Repository:**
 
-```git clone https://github.com/PetchTueksuban/Digital-Slit-Scan-Camera.git```
+```bash
+git clone https://github.com/PetchTueksuban/Digital-Slit-Scan-Camera.git
+```
 
-```cd Digital-Slit-Scan-Camera``` 
+```bash
+cd Digital-Slit-Scan-Camera
+``` 
 
 **Install Dependencies:**  
 This project requires Python and a few essential libraries.  
 
-```pip install -r requirements.txt```
+```bash
+pip install -r requirements.txt
+```
 
 # 💡 What is Slit-Scan?
 This technique mimics the functionality of panoramic or photo-finish cameras. Instead of capturing the entire frame at once, the tool extracts only a specific pixel row/column (e.g., the center) from every frame and joins them together. This "unfolds" moving objects into a single, stretched, and often surreal image.
