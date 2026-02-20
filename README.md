@@ -11,10 +11,13 @@ It works by extracting a single-pixel line from each frame of a video and stitch
 # 🛠 Installation  
 **Clone the Repository:**
 
-```git clone https://github.com/PetchTueksuban/Digital-Slit-Scan-Camera.git```  
-```cd Digital-Slit-Scan-Camera```  
+```git clone https://github.com/PetchTueksuban/Digital-Slit-Scan-Camera.git```
+
+```cd Digital-Slit-Scan-Camera``` 
+
 **Install Dependencies:**  
 This project requires Python and a few essential libraries.  
+
 ```pip install -r requirements.txt```
 
 # 💡 What is Slit-Scan?
