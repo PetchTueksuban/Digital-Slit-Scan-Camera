@@ -43,7 +43,7 @@ while True:
     h, w = frame.shape[:2]
     cx, cy = w // 2, h // 2
     
-    # 1. ตรวจสอบพิกเซลเป้าเล็ง (เฉลี่ยพื้นที่ 20x20 รอบจุดกลางเพื่อความนิ่ง)
+    # 1. check is center is green (background) or not (can present)
     roi = frame[max(0, cy-10):min(h, cy+10), max(0, cx-10):min(w, cx+10)]
     avg_color_bgr = np.mean(roi, axis=(0, 1)).astype(np.uint8)
     avg_hsv = cv2.cvtColor(np.uint8([[avg_color_bgr]]), cv2.COLOR_BGR2HSV)[0][0]
@@ -52,7 +52,7 @@ while True:
                       (LOWER_GREEN[1] <= avg_hsv[1] <= UPPER_GREEN[1]) and \
                       (LOWER_GREEN[2] <= avg_hsv[2] <= UPPER_GREEN[2])
 
-    # 2. หา Contour เพื่อทำ Perspective
+    # 2. find can contour (non-green area) to determine bounding box for perspective correction
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     mask = cv2.bitwise_not(cv2.inRange(hsv, LOWER_GREEN, UPPER_GREEN))
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5,5), np.uint8), iterations=2)
@@ -65,15 +65,15 @@ while True:
             can_present = True
             x_b, y_b, w_b, h_b = cv2.boundingRect(max_cnt)
 
-    # 3. Logic ควบคุมสถานะ (Wait -> Scan -> Finish)
+    # 3. Logic control for scanning process:
     
-    # กรณีวางวัตถุทับเป้า (เป้าไม่เห็นสีเขียว)
+    # if can is detected at center and not already scanning, start waiting period before scanning
     if can_present and not is_center_green and not is_scanning and not scan_finished:
         if not is_waiting:
             is_waiting = True
             ready_start_time = time.time()
         
-        # หน่วงเวลาครบ 1 วินาทีตามที่ตั้งไว้
+        # wait until WAIT_BEFORE_SCAN seconds have passed before starting the scan
         if time.time() - ready_start_time >= WAIT_BEFORE_SCAN:
             unwrapped_img = None
             is_scanning = True
@@ -81,30 +81,30 @@ while True:
             start_time = time.time()
             print(">>> [STARTED] Scanning...")
     else:
-        # ถ้าขยับออกกลางคันขณะรอ ให้รีเซ็ตการรอ
+        # if can is removed during waiting or scanning, reset the process
         if not is_scanning:
             is_waiting = False
 
-    # 4. กระบวนการสแกน (Scanning Process)
+    # 4. scanning process: perspective correction + slit scan
     if is_scanning:
-        # ตัดภาพแบบ Perspective
+        # Perspective
         pts1 = np.float32([[x_b, y_b], [x_b+w_b, y_b], [x_b, y_b+h_b], [x_b+w_b, y_b+h_b]])
         pts2 = np.float32([[0, 0], [TARGET_W, 0], [0, TARGET_H], [TARGET_W, TARGET_H]])
         matrix = cv2.getPerspectiveTransform(pts1, pts2)
         corrected = cv2.warpPerspective(frame, matrix, (TARGET_W, TARGET_H), flags=cv2.INTER_LANCZOS4)
         
-        # ดึงพิกเซลจากจุดกึ่งกลาง (Slit Scan)
+        #slit scan: take the center column of the corrected image and append to unwrapped result
         slit = corrected[:, (TARGET_W//2) : (TARGET_W//2) + 1].copy()
         if unwrapped_img is None:
             unwrapped_img = slit.astype(np.float32)
         else:
             unwrapped_img = np.hstack((unwrapped_img, slit.astype(np.float32)))
 
-        # ครบเวลา 21 วินาที ให้บันทึกผล
+        # 21 seconds scanning duration control
         if (time.time() - start_time) >= SCAN_DURATION:
             print(">>> [SAVING] Processing final image...")
             raw_data = np.clip(unwrapped_img, 0, 255).astype(np.uint8)
-            # ยืดภาพตามสัดส่วน STRETCH_RATIO (2.5)
+            # stretch horizontally for better visibility, keep height as TARGET_H, and save result
             final_img = cv2.resize(raw_data, (int(raw_data.shape[1] * STRETCH_RATIO), TARGET_H), interpolation=cv2.INTER_LANCZOS4)
             cv2.imwrite(f"scan_final_{int(time.time())}.png", final_img)
             is_scanning = False
@@ -123,16 +123,16 @@ while True:
     
     # color and status text
     if is_waiting:
-        cross_color = (0, 255, 255) # สีเหลือง/ฟ้า (Waiting)
+        cross_color = (0, 255, 255) #(Waiting)
         status_text = f"READY IN... {max(0, WAIT_BEFORE_SCAN - (time.time()-ready_start_time)):.1f}s"
     elif is_scanning:
-        cross_color = (0, 255, 0)   # สีเขียว (Scanning)
+        cross_color = (0, 255, 0)   #(Scanning)
         status_text = f"SCANNING... {int(((time.time()-start_time)/SCAN_DURATION)*100)}%"
     elif scan_finished:
-        cross_color = (0, 0, 255)   # สีแดง (Finished)
+        cross_color = (0, 0, 255)   #(Finished)
         status_text = "FINISHED - PLEASE REMOVE"
     else:
-        cross_color = (0, 0, 255)   # สีแดง (Ready)
+        cross_color = (0, 0, 255)   #(Ready)
         status_text = "PLACE CAN AT CENTER"
 
     # aiming marker
