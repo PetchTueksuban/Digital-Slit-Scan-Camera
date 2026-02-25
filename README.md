@@ -1,12 +1,15 @@
 # Digital Slit-Scan Camera  
-**Digital Slit-Scan Camera** is a specialized tool designed to create Slit-scan photography (also known as Time-scan).   
-It works by extracting a single-pixel line from each frame of a video and stitching them together to visualize "Time" as "Space."  
+**Digital Slit-Scan Camera** is a specialized high-speed imaging tool designed for Cylindrical Surface Inspection and Dimensional Measurement.  
+
+By extracting raw pixel slits and stitching them in real-time, this system transforms rotating objects into high-resolution "unwrapped" 2D maps, making it perfect for detecting surface defects, dents, or verifying product dimensions.
 
 # 🌟 Features
-**Time-to-Space Transformation:** Converts temporal video dimensions into a continuous, artistic still image.
-**Customizable Slit:** Supports both Vertical and Horizontal processing lines.
-**High Resolution Support:** Capable of handling high-definition video for sharp, detailed results.
-**Visual Art Creation:** Perfect for creating "distortion" art, photo-finish style images, or experimental photography.
+* **Ultra-Sharp RAW Sampling:** Bypasses perspective warping during capture to maintain maximum image clarity and text legibility.  
+* **Intelligent Auto-Trigger:** Uses HSV-based green screen detection to automatically start and stop scans when an object is placed.  
+* **High-Precision Measurement:** Integrated diameter calculation (cm) using calibrated pixel-to-mm ratios.  
+* **Bayer Pattern Filter:** Advanced 2-pixel neighborhood averaging to eliminate color artifacts (Red/Green lines) without blurring the image.  
+* **Real-time Monitoring:** Dual-window interface showing the live camera feed and the "unwrapping" progress.  
+* **Industrial Ready:** Locked focus and exposure support for consistent results in manufacturing environments.  
 
 # 🛠 Installation  
 **Clone the Repository:**
