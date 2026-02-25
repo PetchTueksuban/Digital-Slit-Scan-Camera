@@ -2,152 +2,122 @@ import cv2
 import numpy as np
 import time
 
-# --- CONFIGURATION  ---
-
+# --- CONFIGURATION ---
 TARGET_H, TARGET_W = 1080, 540 
-current_slit_w = 0.5            
-SCAN_DURATION = 21.0            
-STRETCH_RATIO = 2.5             
-LOCKED_FOCUS_VALUE = 300        
-WAIT_BEFORE_SCAN = 1.0  # wait time in seconds before starting scan after detecting can placement
+STRETCH_RATIO = 2.5 
+LOCKED_FOCUS_VALUE = 300 
+WAIT_BEFORE_SCAN = 1.0 
 
-# HSV color range for detecting green background (adjust as needed)
+# --- [CORE SETTINGS] ---
+REQUIRED_PIXELS = 594 
+FPS_LIMIT = 30
+FRAME_TIME = 1.0 / FPS_LIMIT
+
+# --- [CALIBRATION] ---
+PIXEL_PER_MM_FINAL = 7.07 
+
 LOWER_GREEN = np.array([35, 40, 40]) 
 UPPER_GREEN = np.array([85, 255, 255])
 
-
 # --- CAMERA SETUP ---
-
 cap = cv2.VideoCapture(0, cv2.CAP_MSMF)
+cap.set(cv2.CAP_PROP_BUFFERSIZE, 1) 
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2560) 
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1440)
 cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
 cap.set(cv2.CAP_PROP_FOCUS, LOCKED_FOCUS_VALUE)
 
-
 # --- VARIABLES ---
-
 unwrapped_img = None
 is_scanning = False
 scan_finished = False
-start_time = 0
-ready_start_time = 0  # time when the can was first detected for waiting
-is_waiting = False    #status flag for waiting period before scanning starts
+ready_start_time = 0 
+is_waiting = False 
+final_measured_cm = 0.0
+prev_time = time.time()
+finish_time = 0 
+final_img = None 
 
-print(f">>> SYSTEM READY: วางแช่ไว้ {WAIT_BEFORE_SCAN} วิ เพื่อเริ่มสแกน")
+print(f">>> ULTRA-SHARP MODE: RAW Sampling (Fixed) + 2s Display Timer")
 
 while True:
-    ret, frame = cap.read()
+    loop_start = time.time()
+    
+    if cap.grab():
+        ret, frame = cap.retrieve()
+    else: break
     if not ret: break
 
     h, w = frame.shape[:2]
     cx, cy = w // 2, h // 2
     
-    # 1. check is center is green (background) or not (can present)
+    # 1. Background check
     roi = frame[max(0, cy-10):min(h, cy+10), max(0, cx-10):min(w, cx+10)]
-    avg_color_bgr = np.mean(roi, axis=(0, 1)).astype(np.uint8)
-    avg_hsv = cv2.cvtColor(np.uint8([[avg_color_bgr]]), cv2.COLOR_BGR2HSV)[0][0]
-    
-    is_center_green = (LOWER_GREEN[0] <= avg_hsv[0] <= UPPER_GREEN[0]) and \
-                      (LOWER_GREEN[1] <= avg_hsv[1] <= UPPER_GREEN[1]) and \
-                      (LOWER_GREEN[2] <= avg_hsv[2] <= UPPER_GREEN[2])
+    avg_hsv = cv2.cvtColor(np.uint8([[np.mean(roi, axis=(0, 1)).astype(np.uint8)]]), cv2.COLOR_BGR2HSV)[0][0]
+    is_center_green = (LOWER_GREEN[0] <= avg_hsv[0] <= UPPER_GREEN[0])
 
-    # 2. find can contour (non-green area) to determine bounding box for perspective correction
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    mask = cv2.bitwise_not(cv2.inRange(hsv, LOWER_GREEN, UPPER_GREEN))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5,5), np.uint8), iterations=2)
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    can_present = False
-    if contours:
-        max_cnt = max(contours, key=cv2.contourArea)
-        if cv2.contourArea(max_cnt) > 50000:
-            can_present = True
-            x_b, y_b, w_b, h_b = cv2.boundingRect(max_cnt)
-
-    # 3. Logic control for scanning process:
-    
-    # if can is detected at center and not already scanning, start waiting period before scanning
-    if can_present and not is_center_green and not is_scanning and not scan_finished:
+    if not is_center_green and not is_scanning and not scan_finished:
         if not is_waiting:
             is_waiting = True
             ready_start_time = time.time()
-        
-        # wait until WAIT_BEFORE_SCAN seconds have passed before starting the scan
         if time.time() - ready_start_time >= WAIT_BEFORE_SCAN:
             unwrapped_img = None
             is_scanning = True
             is_waiting = False
-            start_time = time.time()
-            print(">>> [STARTED] Scanning...")
-    else:
-        # if can is removed during waiting or scanning, reset the process
-        if not is_scanning:
-            is_waiting = False
 
-    # 4. scanning process: perspective correction + slit scan
+    # 4. Scanning Process (RAW Sampling - UNTOUCHED)
     if is_scanning:
-        # Perspective
-        pts1 = np.float32([[x_b, y_b], [x_b+w_b, y_b], [x_b, y_b+h_b], [x_b+w_b, y_b+h_b]])
-        pts2 = np.float32([[0, 0], [TARGET_W, 0], [0, TARGET_H], [TARGET_W, TARGET_H]])
-        matrix = cv2.getPerspectiveTransform(pts1, pts2)
-        corrected = cv2.warpPerspective(frame, matrix, (TARGET_W, TARGET_H), flags=cv2.INTER_LANCZOS4)
+        raw_slit_area = frame[:, cx : cx + 2] 
+        slit = np.mean(raw_slit_area, axis=1, keepdims=True).astype(np.uint8)
         
-        #slit scan: take the center column of the corrected image and append to unwrapped result
-        slit = corrected[:, (TARGET_W//2) : (TARGET_W//2) + 1].copy()
         if unwrapped_img is None:
-            unwrapped_img = slit.astype(np.float32)
+            unwrapped_img = slit
         else:
-            unwrapped_img = np.hstack((unwrapped_img, slit.astype(np.float32)))
+            if unwrapped_img.shape[1] < REQUIRED_PIXELS:
+                unwrapped_img = np.hstack((unwrapped_img, slit))
 
-        # 21 seconds scanning duration control
-        if (time.time() - start_time) >= SCAN_DURATION:
-            print(">>> [SAVING] Processing final image...")
-            raw_data = np.clip(unwrapped_img, 0, 255).astype(np.uint8)
-            # stretch horizontally for better visibility, keep height as TARGET_H, and save result
-            final_img = cv2.resize(raw_data, (int(raw_data.shape[1] * STRETCH_RATIO), TARGET_H), interpolation=cv2.INTER_LANCZOS4)
-            cv2.imwrite(f"scan_final_{int(time.time())}.png", final_img)
+        if unwrapped_img.shape[1] >= REQUIRED_PIXELS:
+            # last stretch to target height
+            final_img = cv2.resize(unwrapped_img, (int(unwrapped_img.shape[1] * STRETCH_RATIO), TARGET_H), interpolation=cv2.INTER_LANCZOS4)
+            
+            # measurement
+            gray = cv2.cvtColor(final_img, cv2.COLOR_BGR2GRAY)
+            blurred = cv2.GaussianBlur(cv2.medianBlur(gray, 5), (7, 7), 0)
+            _, thresh = cv2.threshold(blurred, 30, 255, cv2.THRESH_BINARY)
+            cnts, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if cnts:
+                fw = cv2.boundingRect(max(cnts, key=cv2.contourArea))[2]
+                final_measured_cm = (fw / PIXEL_PER_MM_FINAL) / 10.0
+            
+            cv2.imwrite(f"scan_ultra_sharp_{int(time.time())}.png", final_img)
             is_scanning = False
             scan_finished = True
+            finish_time = time.time() 
 
-    # reset when ready for next can
-    if is_center_green and scan_finished:
-        print(">>> [RESET] Waiting for next can...")
-        scan_finished = False
-        unwrapped_img = None
+    # show result if scan finished
+    if scan_finished:
+        if (time.time() - finish_time >= 5.0):
+            scan_finished = False
+            unwrapped_img = None
+            try:
+                cv2.destroyWindow('Measurement Result')
+                cv2.destroyWindow('Final Scanned Image') 
+            except: pass
+        else:
+            # result_img = np.zeros((200, 600, 3), dtype=np.uint8)
+            cv2.namedWindow('Final Scanned Image', cv2.WINDOW_NORMAL)
+            cv2.imshow('Final Scanned Image', final_img)
+            
+            # show result in a separate window
+            res_win = np.zeros((200, 600, 3), dtype=np.uint8)
+            cv2.putText(res_win, f"RESULT: {final_measured_cm:.2f} cm", (40, 110), 2, 1.8, (0, 255, 0), 4)
+            cv2.imshow('Measurement Result', res_win)
 
-    # --- UI & MONITORING ---
+    # UI Monitor
     monitor = cv2.resize(frame, (960, 540))
-    # center marker position
-    mx, my = 480, 270
-    
-    # color and status text
-    if is_waiting:
-        cross_color = (0, 255, 255) #(Waiting)
-        status_text = f"READY IN... {max(0, WAIT_BEFORE_SCAN - (time.time()-ready_start_time)):.1f}s"
-    elif is_scanning:
-        cross_color = (0, 255, 0)   #(Scanning)
-        status_text = f"SCANNING... {int(((time.time()-start_time)/SCAN_DURATION)*100)}%"
-    elif scan_finished:
-        cross_color = (0, 0, 255)   #(Finished)
-        status_text = "FINISHED - PLEASE REMOVE"
-    else:
-        cross_color = (0, 0, 255)   #(Ready)
-        status_text = "PLACE CAN AT CENTER"
-
-    # aiming marker
-    cv2.drawMarker(monitor, (mx, my), cross_color, cv2.MARKER_CROSS, 40, 2)
-    cv2.circle(monitor, (mx, my), 20, cross_color, 1)
-    cv2.putText(monitor, status_text, (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, cross_color, 2)
-
+    cv2.drawMarker(monitor, (480, 270), (0, 255, 0) if is_scanning else (0, 0, 255), cv2.MARKER_CROSS, 40, 2)
+    cv2.putText(monitor, f"PX: {0 if unwrapped_img is None else unwrapped_img.shape[1]}/{REQUIRED_PIXELS}", (20, 50), 2, 1, (255, 255, 255), 2)
     cv2.imshow('Cylindrical Scan System', monitor)
-    
-    # live preview of unwrapped image
-    if unwrapped_img is not None:
-        live_preview = np.clip(unwrapped_img, 0, 255).astype(np.uint8)
-    
-        p_h, p_w = live_preview.shape[:2]
-        cv2.imshow('Live Result', cv2.resize(live_preview, (min(p_w*2, 1200), 400))) # size
 
     if cv2.waitKey(1) & 0xFF == ord('q'): break
 
